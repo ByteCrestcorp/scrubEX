@@ -1,0 +1,147 @@
+[project]
+name = "scrubex-backend"
+version = "0.1.0"
+requires-python = ">=3.12"
+
+[tool.poetry]
+name = "scrubex-backend"
+version = "0.1.0"
+description = "ScrubEX — inspect-first metadata removal (FastAPI + Celery)"
+authors = ["ByteCrest"]
+readme = "../README.md"
+packages = [{ include = "scrubex" }]
+
+# ---------------------------------------------------------------------------
+# Dependencies are grouped BY ROLE, and this is a security boundary rather than
+# packaging tidiness.
+#
+# Invariant 4: "No parser is importable inside the API service." A single shared
+# dependency set would install every parser into every image, making that
+# invariant false at the image level even while the source imports stayed clean.
+# Each Dockerfile target therefore installs only its own groups:
+#
+#   api            main + api
+#   bot            main + bot
+#   worker-image   main + worker + parser-image
+#   worker-pdf     main + worker + parser-pdf
+#   worker-office  main + worker + parser-office
+#
+# Resolution still happens once -- one lock file, one resolved dependency graph.
+# Only the install step is partitioned. Groups are non-optional so a plain
+# `poetry install` still gives a full local dev environment.
+#
+# tests/security/test_image_boundaries.py asserts the Dockerfile keeps to this.
+# ---------------------------------------------------------------------------
+
+[tool.poetry.dependencies]
+python = "^3.12"
+
+# Shared by every role: configuration only, read exclusively by
+# scrubex/config.py (invariant 12).
+pydantic-settings = "^2.6.1"
+python-dotenv = "^1.2.2"
+
+[tool.poetry.group.api.dependencies]
+# HTTP boundary. Holds Redis credentials, contains no parser.
+fastapi = "^0.115.6"
+uvicorn = { version = "*", extras = ["standard"] }
+python-multipart = "^0.0.22"
+redis = "^5.2.1"
+celery = "^5.4.0"
+
+[tool.poetry.group.worker.dependencies]
+# Job orchestration. Holds Redis credentials; parsers run in the sandbox.
+redis = "^5.2.1"
+celery = "^5.4.0"
+
+# ---------------------------------------------------------------------------
+# Parser groups. Highest patch priority in the project, because these are the
+# only code that processes hostile input.
+#
+# Version floors are chosen so every parser resolves to a prebuilt wheel on both
+# the production interpreter (3.12, per the container images) and current dev
+# machines. lxml 5.x in particular has no cp314 wheel and falls back to a source
+# build needing libxml2/libxslt headers. Exact versions are pinned by
+# poetry.lock, which is what makes builds reproducible.
+# ---------------------------------------------------------------------------
+
+[tool.poetry.group.parser-image.dependencies]
+pillow = "^12.3.0"           # paired with the exiftool binary from apt
+
+[tool.poetry.group.parser-pdf.dependencies]
+pikepdf = "^10.10.0"         # manylinux wheel bundles libqpdf
+
+[tool.poetry.group.parser-office.dependencies]
+python-docx = "^1.2.0"       # OOXML parts
+lxml = "^6.1.1"              # direct XML manipulation, no rendering
+
+[tool.poetry.group.bot.dependencies]
+# Telegram client. Holds no Redis credentials and no parser tooling, so it gets
+# neither the redis library nor any parser group.
+aiogram = { version = "^3.27.0", python = ">=3.12,<3.15" }
+httpx = "^0.28.1"
+
+[dependency-groups]
+dev = [
+    "pytest (>=9.0.2,<10.0.0)",
+    "pytest-asyncio (>=1.3.0,<2.0.0)",
+    "ruff (>=0.14.0,<0.15.0)",
+    "mypy (>=1.14.0,<2.0.0)",
+    # Read by tests/security/test_network_segmentation.py, which asserts the
+    # compose topology. Dev-only: no runtime code parses YAML.
+    "pyyaml (>=6.0.2,<7.0.0)",
+    "types-pyyaml (>=6.0.12,<7.0.0)",
+]
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+# ---------------------------------------------------------------------------
+# Removed deliberately, and on architecture.md's "Do not use" list. Any of these
+# reappearing is a design regression, not a dependency update:
+#
+#   pymongo, motor  Job state consolidated into Redis, whose per-key TTL makes
+#                   expiry a database guarantee. A second store reintroduces the
+#                   persistence problem the privacy claim rests on.
+#   arcjet          An in-process SDK, not an edge service, so it does not
+#                   replace DDoS protection -- and its rate limiting reports
+#                   client fingerprints to a third-party cloud API, which is the
+#                   exact contradiction this product exists to avoid (N6).
+#   rich            Used only by the retired dev CLI.
+#   pypdf           pikepdf/qpdf is the chosen PDF engine.
+# ---------------------------------------------------------------------------
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["."]
+extend-exclude = ["../legacy"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "S", "C4", "SIM", "RUF"]
+# S101 (assert) is expected in tests; permitted there only, via per-file ignores.
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = ["scrubex", "tests"]
+# blueprint.md code standards: strict across api/ and workers/. Applied to the
+# whole package rather than those two subtrees, since there is no reason for the
+# rest to be looser. Replaces the pyright/basedpyright configuration that came
+# with the original codebase -- one type checker, not two disagreeing.
+exclude = ["^\\.venv/", "^\\.\\./legacy/"]
+warn_unreachable = true
+warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+# Ships no type information.
+module = ["docx.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

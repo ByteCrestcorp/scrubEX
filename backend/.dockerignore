@@ -1,0 +1,21 @@
+# Retired stack — never enters an image.
+../legacy/
+legacy/
+
+# Local environments and caches
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+logs/
+
+# Tests are not shipped in a runtime image. The security suite runs in CI, where
+# a failing security test blocks the deploy.
+tests/
+
+# Secrets never enter a build context, since build args and layers persist in
+# image history.
+.env
+.env.*

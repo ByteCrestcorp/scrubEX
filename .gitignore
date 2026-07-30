@@ -1,0 +1,44 @@
+# --- Secrets -----------------------------------------------------------------
+# The original codebase committed a live .env. Every value that ever appeared in
+# it is treated as compromised and rotated before launch. This must never be
+# relaxed: .env.example carries variable names only.
+.env
+.env.local
+.env.*.local
+*.pem
+!infra/**/*.pem.example
+
+# --- Retired stack -----------------------------------------------------------
+# Reference only, kept readable during the rewrite and deliberately OUT of
+# history so the published tree carries no MongoDB, no Arcjet, and no retired
+# credential handling. Removed from disk at P11.
+legacy/
+
+# --- Rollback artifacts ------------------------------------------------------
+*.tar.gz
+
+# --- Python ------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+backend/logs/
+
+# --- Node / Next.js ----------------------------------------------------------
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+next-env.d.ts
+
+# --- Local scratch -----------------------------------------------------------
+# Runtime scratch disk if SCRATCH_DIR points inside the tree.
+.scratch/
+
+# --- OS / IDE ----------------------------------------------------------------
+.DS_Store
+.idea/
+.vscode/

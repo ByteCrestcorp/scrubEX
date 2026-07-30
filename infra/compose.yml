@@ -1,0 +1,161 @@
+
+
+name: scrubex
+
+x-hardening: &hardening
+  
+  read_only: true
+  cap_drop: [ALL]
+  security_opt:
+    - no-new-privileges:true
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+x-worker: &worker
+  <<: *hardening
+  networks: [core]
+  environment:
+ 
+    REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD must be set}
+    REDIS_URL: redis://:${REDIS_PASSWORD:?}@redis:6379/0
+    SCRATCH_DIR: /scratch
+    SANDBOX_BACKEND: bubblewrap
+    JOB_TTL_SECONDS: ${JOB_TTL_SECONDS:-900}
+  volumes:
+    - scratch:/scratch
+  tmpfs:
+    # Parsers run inside a per-job bubblewrap sandbox on tmpfs. The container
+    # root filesystem stays read-only.
+    - /tmp
+  depends_on:
+    redis:
+      condition: service_healthy
+
+networks:
+  edge:
+ 
+    driver: bridge
+
+  core:
+ 
+    driver: bridge
+    internal: true
+
+volumes:
+  scratch:
+   
+
+services:
+  frontend:
+    <<: *hardening
+    build:
+      context: ..
+      dockerfile: infra/docker/frontend.Dockerfile
+      args:
+     
+        NEXT_PUBLIC_API_URL: ${PUBLIC_API_URL:?PUBLIC_API_URL must be set}
+    networks: [edge]
+    ports:
+      - "3000:3000"
+    environment:
+    
+      NEXT_PUBLIC_API_URL: ${PUBLIC_API_URL:?PUBLIC_API_URL must be set}
+    tmpfs:
+      - /tmp
+      - /app/.next/cache
+    user: "10002:10002"
+
+  api:
+    <<: *hardening
+    build:
+      context: ..
+      dockerfile: infra/docker/backend.Dockerfile
+      target: api
+   
+    networks: [edge, core]
+    ports:
+      - "8000:8000"
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD must be set}
+      REDIS_URL: redis://:${REDIS_PASSWORD:?}@redis:6379/0
+      SCRATCH_DIR: /scratch
+      JOB_TTL_SECONDS: ${JOB_TTL_SECONDS:-900}
+      PUBLIC_API_URL: ${PUBLIC_API_URL:?PUBLIC_API_URL must be set}
+    volumes:
+      - scratch:/scratch
+    tmpfs:
+      - /tmp
+    user: "10001:10001"
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  bot:
+    <<: *hardening
+    build:
+      context: ..
+      dockerfile: infra/docker/backend.Dockerfile
+      target: bot
+   
+    networks: [edge]
+    environment:
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?TELEGRAM_BOT_TOKEN must be set}
+      PUBLIC_API_URL: http://api:8000
+    tmpfs:
+      - /tmp
+    user: "10001:10001"
+    depends_on:
+      - api
+
+  redis:
+    <<: *hardening
+    image: redis:7.4-alpine
+    networks: [core]
+    command: >
+      redis-server /usr/local/etc/redis/redis.conf
+      --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD must be set}
+    volumes:
+    
+      - ./redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    tmpfs:
+      
+      - /data
+    user: "999:999"
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:?}", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  worker-image:
+    <<: *worker
+    build:
+      context: ..
+      dockerfile: infra/docker/backend.Dockerfile
+      target: worker-image
+    command: celery -A scrubex.workers.image worker -Q image --loglevel=info
+    user: "10001:10001"
+
+  worker-pdf:
+    <<: *worker
+    build:
+      context: ..
+      dockerfile: infra/docker/backend.Dockerfile
+      target: worker-pdf
+    command: celery -A scrubex.workers.pdf worker -Q pdf --loglevel=info
+    user: "10001:10001"
+
+  worker-office:
+    <<: *worker
+    build:
+      context: ..
+      dockerfile: infra/docker/backend.Dockerfile
+      target: worker-office
+    command: celery -A scrubex.workers.office worker -Q office --loglevel=info
+    user: "10001:10001"
+
+
