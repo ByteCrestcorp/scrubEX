@@ -1,26 +1,14 @@
-# --- Secrets -----------------------------------------------------------------
-# The original codebase committed a live .env. Every value that ever appeared in
-# it is treated as compromised and rotated before launch. This must never be
-# relaxed: .env.example carries variable names only.
+
 .env
 .env.local
 .env.*.local
 *.pem
 !infra/**/*.pem.example
 
-# --- Design docs -------------------------------------------------------------
-# blueprint.md, architecture.md, security.md, phases.md, progress-tracker.md and
-# the per-phase plans under prompts/. Kept out of the public repository.
-#
-# These remain the source of truth for how this system is built, and AGENTS.md
-# still derives its rules from them — they are simply not published. Back them up
-# somewhere durable: they are not recoverable from this repository.
+
 context/
 
-# --- Retired stack -----------------------------------------------------------
-# Reference only, kept readable during the rewrite and deliberately OUT of
-# history so the published tree carries no MongoDB, no Arcjet, and no retired
-# credential handling. Removed from disk at P11.
+
 legacy/
 
 # --- Rollback artifacts ------------------------------------------------------
@@ -43,8 +31,7 @@ out/
 *.tsbuildinfo
 next-env.d.ts
 
-# --- Local scratch -----------------------------------------------------------
-# Runtime scratch disk if SCRATCH_DIR points inside the tree.
+
 .scratch/
 
 # --- OS / IDE ----------------------------------------------------------------
